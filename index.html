@@ -29,15 +29,15 @@ footer{padding:16px 28px;border-top:1px solid var(--border);text-align:center;co
 <header><div class="play" aria-hidden="true">▶</div><div><h1>YouTube Downloader</h1><p>Simpan media yang Anda diizinkan untuk unduh</p></div></header>
 <section class="content">
 <form id="download-form">
-<div class="field"><label for="video-url">Tautan video</label><input id="video-url" type="url" placeholder="Tempel tautan media di sini…" autocomplete="url" required><p class="hint">Gunakan hanya tautan media yang Anda miliki atau yang pemiliknya mengizinkan untuk diunduh.</p></div>
+<div class="field"><label for="video-url">Tautan video</label><input id="video-url" type="url" placeholder="Tempel tautan media di sini…" autocomplete="url" required><p class="hint">Gunakan hanya media yang Anda miliki atau yang pemiliknya mengizinkan untuk diunduh.</p></div>
 <div class="options">
 <div class="field"><label for="format">Format</label><select id="format" name="format"><option value="mp4">MP4 — Video</option><option value="mp3">MP3 — Audio</option></select></div>
-<div class="field"><label for="quality">Kualitas</label><select id="quality" name="quality"><option value="best">Terbaik yang tersedia</option><option value="1080">1080p (jika tersedia)</option><option value="720">720p (jika tersedia)</option><option value="480">480p (jika tersedia)</option></select></div>
+<div class="field"><label for="quality">Kualitas</label><select id="quality" name="quality"><option value="best">Terbaik yang tersedia</option><option value="1080">1080p (jika tersedia)</option><option value="720">720p (jika tersedia)</option><option value="480">480p (jika tersedia)</option></select><p class="hint">Pilihan kualitas belum diterapkan oleh backend.</p></div>
 </div>
-<button class="download" id="submit-button" type="submit">PERIKSA TAUTAN</button>
-<div class="status info show" id="status" role="status" aria-live="polite">API terhubung untuk pemeriksaan tautan. Fitur unduhan belum diaktifkan.</div>
+<button class="download" id="submit-button" type="submit">UNDUH MEDIA</button>
+<div class="status info show" id="status" role="status" aria-live="polite">Masukkan tautan media yang boleh Anda unduh. Unduhan dapat gagal jika file terlalu besar atau layanan hosting mencapai batasnya.</div>
 </form>
-<p class="small">Catatan: halaman ini memeriksa tautan melalui layanan API. Pemeriksaan berhasil tidak berarti file sudah diunduh.</p>
+<p class="small">Gunakan layanan ini hanya untuk konten yang Anda miliki atau memiliki izin untuk mengunduhnya. Unduhan video besar mungkin tidak didukung oleh hosting gratis.</p>
 </section>
 <footer>Dibuat Oleh Kursani — Sani Computer</footer>
 </main>
@@ -62,33 +62,49 @@ form.addEventListener("submit", async (event) => {
   let parsed;
   try { parsed = new URL(url); }
   catch { showStatus("Format tautan tidak valid. Periksa kembali URL.", "error"); return; }
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    showStatus("Tautan harus menggunakan HTTP atau HTTPS.", "error"); return;
+  if (parsed.protocol !== "https:") {
+    showStatus("Gunakan tautan HTTPS.", "error"); return;
   }
   submitButton.disabled = true;
-  submitButton.textContent = "MEMERIKSA TAUTAN…";
-  showStatus("Sedang menghubungi API Sani Downloader…", "info");
+  submitButton.textContent = "SEDANG MEMPROSES…";
+  showStatus("Permintaan dikirim ke API. Tunggu proses selesai dan jangan tutup halaman.", "info");
   try {
-    const response = await fetch(`${API_BASE}/check-url`, {
+    const response = await fetch(`${API_BASE}/download`, {
       method: "POST",
-      headers: {"Content-Type":"application/json","Accept":"application/json"},
+      headers: {"Content-Type":"application/json","Accept":"application/json, video/mp4, audio/mpeg"},
       body: JSON.stringify({url: url, format: formatSelect.value})
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const detail = typeof data.detail === "string" ? data.detail : "Permintaan tidak dapat diproses.";
-      throw new Error(detail);
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    if (!response.ok || contentType.includes("application/json")) {
+      let message = "Unduhan gagal. Coba media yang lebih singkat atau periksa log API.";
+      try {
+        const data = await response.json();
+        if (typeof data.detail === "string") message = data.detail;
+      } catch {}
+      throw new Error(message);
     }
-    if (data.valid) {
-      showStatus((data.message || "Format tautan diterima.") + " Format pilihan: " + formatSelect.value.toUpperCase() + ". Pemeriksaan berhasil, tetapi file belum diunduh karena endpoint unduhan belum dikonfigurasi.", "success");
-    } else {
-      showStatus(data.message || "Tautan tidak dapat diterima.", "error");
+    const blob = await response.blob();
+    if (!blob.size) throw new Error("Server mengembalikan file kosong.");
+    const disposition = response.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+    let filename = match ? decodeURIComponent(match[1] || match[2]) : (formatSelect.value === "mp3" ? "sani-download.mp3" : "sani-download.mp4");
+    if (!filename.toLowerCase().endsWith("." + formatSelect.value)) {
+      filename = filename.replace(/\.[^.]+$/, "") + "." + formatSelect.value;
     }
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+    showStatus("File berhasil diterima dari API. Jika browser tidak langsung menyimpan, periksa daftar unduhan Chrome.", "success");
   } catch (error) {
-    showStatus("Tidak dapat menghubungi API. Periksa koneksi internet atau konfigurasi CORS. Detail: " + (error && error.message ? error.message : "Kesalahan tidak diketahui."), "error");
+    showStatus("Unduhan belum berhasil. " + (error && error.message ? error.message : "Terjadi kesalahan jaringan/CORS.") + " Jika pesan menyebut batas ukuran, waktu, atau FFmpeg, backend perlu penyesuaian hosting.", "error");
   } finally {
     submitButton.disabled = false;
-    submitButton.textContent = "PERIKSA TAUTAN";
+    submitButton.textContent = "UNDUH MEDIA";
   }
 });
 </script>
