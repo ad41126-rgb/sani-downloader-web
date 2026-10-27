@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#102a43">
+<title>YouTube Downloader – Sani Computer</title>
+<style>
+:root{--navy:#102a43;--green:#18a957;--text:#172b4d;--muted:#64748b;--border:#dbe3ee}
+*{box-sizing:border-box}body{margin:0;background:#eef3f9;color:var(--text);font:16px/1.5 Arial,Helvetica,sans-serif}
+.wrap{width:min(960px,calc(100% - 28px));margin:28px auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 12px 35px #1a30501a}
+header{display:flex;align-items:center;gap:14px;padding:24px 28px;color:#fff;background:var(--navy)}
+.play{display:grid;place-items:center;flex:0 0 48px;width:48px;height:48px;border-radius:12px;background:var(--green);font-size:24px}
+h1{margin:0;font-size:clamp(22px,3vw,30px);line-height:1.2}header p{margin:6px 0 0;color:#d7e5f4;font-size:14px}
+.content{padding:26px 28px 30px}label{display:block;margin:0 0 8px;font-weight:700}
+input,select{width:100%;min-width:0;padding:13px 14px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text);font:inherit}
+input:focus,select:focus,button:focus-visible{outline:3px solid #18a95740;outline-offset:2px;border-color:var(--green)}
+.field{margin-bottom:20px}.options{display:grid;grid-template-columns:1fr 1fr;gap:16px}.hint,.small{color:var(--muted);font-size:13px}.hint{margin:7px 0 0}
+.download{width:100%;border:0;border-radius:10px;padding:15px 18px;color:#fff;background:var(--green);font:inherit;font-size:17px;font-weight:700;cursor:pointer}
+.download:hover{background:#128447}.download:disabled{opacity:.65;cursor:wait}
+.status{display:none;margin-top:18px;padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;overflow-wrap:anywhere}
+.status.show{display:block}.status.success{border-color:#a7e3bf;background:#effcf4}.status.error{border-color:#f3b5b0;background:#fff4f2;color:#b42318}.status.info{border-color:#bfd7f5;background:#f1f7ff}
+footer{padding:16px 28px;border-top:1px solid var(--border);text-align:center;color:var(--muted);font-size:13px}
+@media(max-width:620px){.wrap{width:calc(100% - 16px);margin:8px auto}header{padding:20px 18px}.content{padding:22px 18px}.options{grid-template-columns:1fr;gap:0}footer{padding:15px 18px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+<header><div class="play" aria-hidden="true">▶</div><div><h1>YouTube Downloader</h1><p>Simpan media yang Anda diizinkan untuk unduh</p></div></header>
+<section class="content">
+<form id="download-form">
+<div class="field"><label for="video-url">Tautan video</label><input id="video-url" type="url" placeholder="Tempel tautan media di sini…" autocomplete="url" required><p class="hint">Gunakan hanya tautan media yang Anda miliki atau yang pemiliknya mengizinkan untuk diunduh.</p></div>
+<div class="options">
+<div class="field"><label for="format">Format</label><select id="format" name="format"><option value="mp4">MP4 — Video</option><option value="mp3">MP3 — Audio</option></select></div>
+<div class="field"><label for="quality">Kualitas</label><select id="quality" name="quality"><option value="best">Terbaik yang tersedia</option><option value="1080">1080p (jika tersedia)</option><option value="720">720p (jika tersedia)</option><option value="480">480p (jika tersedia)</option></select></div>
+</div>
+<button class="download" id="submit-button" type="submit">PERIKSA TAUTAN</button>
+<div class="status info show" id="status" role="status" aria-live="polite">API terhubung untuk pemeriksaan tautan. Fitur unduhan belum diaktifkan.</div>
+</form>
+<p class="small">Catatan: halaman ini memeriksa tautan melalui layanan API. Pemeriksaan berhasil tidak berarti file sudah diunduh.</p>
+</section>
+<footer>Dibuat Oleh Kursani — Sani Computer</footer>
+</main>
+<script>
+const API_BASE = "https://sani-downloader-api.vercel.app";
+const form = document.getElementById("download-form");
+const urlInput = document.getElementById("video-url");
+const formatSelect = document.getElementById("format");
+const qualitySelect = document.getElementById("quality");
+const submitButton = document.getElementById("submit-button");
+const statusBox = document.getElementById("status");
+function showStatus(message, kind) {
+  statusBox.textContent = message;
+  statusBox.className = "status show " + kind;
+}
+formatSelect.addEventListener("change", () => {
+  qualitySelect.disabled = formatSelect.value === "mp3";
+});
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const url = urlInput.value.trim();
+  let parsed;
+  try { parsed = new URL(url); }
+  catch { showStatus("Format tautan tidak valid. Periksa kembali URL.", "error"); return; }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    showStatus("Tautan harus menggunakan HTTP atau HTTPS.", "error"); return;
+  }
+  submitButton.disabled = true;
+  submitButton.textContent = "MEMERIKSA TAUTAN…";
+  showStatus("Sedang menghubungi API Sani Downloader…", "info");
+  try {
+    const response = await fetch(`${API_BASE}/check-url`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify({url: url, format: formatSelect.value})
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = typeof data.detail === "string" ? data.detail : "Permintaan tidak dapat diproses.";
+      throw new Error(detail);
+    }
+    if (data.valid) {
+      showStatus((data.message || "Format tautan diterima.") + " Format pilihan: " + formatSelect.value.toUpperCase() + ". Pemeriksaan berhasil, tetapi file belum diunduh karena endpoint unduhan belum dikonfigurasi.", "success");
+    } else {
+      showStatus(data.message || "Tautan tidak dapat diterima.", "error");
+    }
+  } catch (error) {
+    showStatus("Tidak dapat menghubungi API. Periksa koneksi internet atau konfigurasi CORS. Detail: " + (error && error.message ? error.message : "Kesalahan tidak diketahui."), "error");
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "PERIKSA TAUTAN";
+  }
+});
+</script>
+</body>
+</html>
